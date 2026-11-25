@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Notte Fonda Studio</title>
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;900&family=Cinzel+Decorative:wght@700;900&family=IM+Fell+English:ital@0;1&display=swap" rel="stylesheet">
+<style>
+:root{--bg:#07060b;--ink:#e8dcc4;--dim:#8c7f6a;--line:#2a2230;--gold:#c9a24a}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(80% 60% at 50% 0%,#1a1020,var(--bg));color:var(--ink);font-family:'IM Fell English',Georgia,serif;min-height:100vh}
+header{padding:22px 16px 10px;text-align:center}
+h1{font-family:'Cinzel Decorative',Cinzel,serif;font-weight:900;margin:0;font-size:clamp(26px,5vw,44px);letter-spacing:3px;color:#f1e2c2;text-shadow:0 0 18px rgba(200,40,40,.4)}
+.sub{color:var(--dim);font-style:italic;margin-top:4px}
+.bar{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;padding:10px 16px}
+button,select{font-family:Cinzel,serif;font-weight:900;letter-spacing:1px;background:#140e18;color:var(--ink);border:1px solid #4a3a2a;border-radius:6px;padding:8px 12px;cursor:pointer}
+button.on{border-color:var(--gold);color:#ffe3a0;box-shadow:0 0 10px rgba(201,162,74,.35)}
+#grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:18px;padding:16px;max-width:1500px;margin:0 auto}
+.cell{display:flex;flex-direction:column;align-items:center;gap:6px}
+.cell canvas{width:100%;height:auto;border-radius:10px;box-shadow:0 10px 30px rgba(0,0,0,.7);cursor:zoom-in}
+.cell span{font-family:Cinzel,serif;font-size:13px;color:var(--dim)}
+#zoom{position:fixed;inset:0;background:rgba(0,0,0,.9);display:none;align-items:center;justify-content:center;z-index:9;cursor:zoom-out}
+#zoom canvas{max-height:94vh;max-width:94vw}
+#ui{display:none;flex-wrap:wrap;gap:22px;justify-content:center;padding:16px}
+#ui figure{margin:0;text-align:center}
+#ui canvas{max-width:90vw;background:repeating-conic-gradient(#1a1520 0 25%,#120e16 0 50%) 0 0/16px 16px;border-radius:6px}
+#ui figcaption{font-family:Cinzel,serif;font-size:12px;color:var(--dim);margin-top:4px}
+</style>
+</head>
+<body>
+<header><h1>Notte Fonda · Studio</h1><div class="sub">Motore grafico delle illustrazioni, delle cornici e dell'HUD</div></header>
+<div class="bar">
+  <button data-v="full" class="on">Carte complete</button>
+  <button data-v="art">Solo illustrazioni</button>
+  <button data-v="ui">Cornici e HUD</button>
+</div>
+<div id="grid"></div>
+<div id="ui"></div>
+<div id="zoom"></div>
+<script src="engine/nf-art-core.js"></script>
+<script src="engine/nf-art-cards.js"></script>
+<script src="engine/nf-art-ui.js"></script>
+<script>
+const A = window.NFArt;
+const P = new URLSearchParams(location.search);
+const only = P.get('k') ? P.get('k').split(',') : null;
+let view = P.get('v') || 'full';
+const cache = {};
+function art(k) { return cache[k] || (cache[k] = A.renderArt(k)); }
+function draw() {
+  const grid = document.getElementById('grid'), ui = document.getElementById('ui');
+  grid.innerHTML = ''; ui.innerHTML = '';
+  grid.style.display = view === 'ui' ? 'none' : 'grid'; ui.style.display = view === 'ui' ? 'flex' : 'none';
+  document.querySelectorAll('.bar button').forEach(b => b.classList.toggle('on', b.dataset.v === view));
+  if (view === 'ui') {
+    if (!A.UI) return;
+    for (const [name, fn] of Object.entries(A.UI)) {
+      const f = document.createElement('figure'); const cv = fn(); f.appendChild(cv);
+      const cap = document.createElement('figcaption'); cap.textContent = name + ' · ' + cv.width + '×' + cv.height; f.appendChild(cap); ui.appendChild(f);
+    }
+    return;
+  }
+  const keys = (only || Object.keys(A.CARDS)).filter(k => A.SCENES[k]);
+  for (const k of keys) {
+    const cell = document.createElement('div'); cell.className = 'cell';
+    let cv;
+    try { cv = view === 'full' && A.renderCard ? A.renderCard(k, art(k)) : art(k); }
+    catch (e) { console.error(k, e); continue; }
+    cv.onclick = () => { const z = document.getElementById('zoom'); z.innerHTML = ''; const c2 = A.canvas(cv.width, cv.height); c2.getContext('2d').drawImage(cv, 0, 0); z.appendChild(c2); z.style.display = 'flex'; };
+    cell.appendChild(cv);
+    const s = document.createElement('span'); s.textContent = A.CARDS[k][0]; cell.appendChild(s);
+    grid.appendChild(cell);
+  }
+}
+document.querySelectorAll('.bar button').forEach(b => b.onclick = () => { view = b.dataset.v; draw(); });
+document.getElementById('zoom').onclick = (e) => { e.currentTarget.style.display = 'none'; };
+(document.fonts ? document.fonts.ready : Promise.resolve()).then(draw);
+</script>
+</body>
+</html>
