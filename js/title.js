@@ -2,10 +2,12 @@
 'use strict';
 const TITLE = (function () {
 const TAU = Math.PI * 2;
-let cv, c, W, H, DPR, t = 0, running = false, leaves = [];
+let neonAt = null, neonX = 0;
+let cv, c, W, H, DPR, t = 0, running = false, leaves = [], TL = [];
 function circ(x, y, r, col) { c.fillStyle = col; c.beginPath(); c.arc(x, y, r, 0, TAU); c.fill(); }
 function rr(x, y, w, h, r, col) { c.fillStyle = col; c.beginPath(); c.roundRect(x, y, w, h, r); c.fill(); }
-function glow(x, y, r, col, a) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); c.save(); c.globalAlpha = a; c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); c.restore(); }
+function glow(x, y, r, col, a) { TL.push({ m: c.getTransform(), x, y, r, col, a }); }
+function glowNow(x, y, r, col, a) { const g = c.createRadialGradient(x, y, 0, x, y, r); g.addColorStop(0, col); g.addColorStop(1, 'rgba(0,0,0,0)'); c.save(); c.globalAlpha = a; c.fillStyle = g; c.fillRect(x - r, y - r, r * 2, r * 2); c.restore(); }
 function rng(s) { return () => (s = (s * 16807) % 2147483647) / 2147483647; }
 
 function init(canvas) {
@@ -19,7 +21,8 @@ function draw(dt) {
   c.setTransform(DPR, 0, 0, DPR, 0, 0);
   // cielo al crepuscolo
   const sky = c.createLinearGradient(0, 0, 0, H);
-  sky.addColorStop(0, '#1b1838'); sky.addColorStop(0.45, '#4a3358'); sky.addColorStop(0.75, '#b8645a'); sky.addColorStop(1, '#e8a06a');
+  TL = [];
+  sky.addColorStop(0, '#0a0d2c'); sky.addColorStop(0.5, '#25205a'); sky.addColorStop(0.8, '#5a2e6e'); sky.addColorStop(1, '#a84a7a');
   c.fillStyle = sky; c.fillRect(0, 0, W, H);
   const r = rng(3);
   for (let i = 0; i < 70; i++) { const x = r() * W, y = r() * H * 0.45; c.globalAlpha = 0.3 + 0.5 * Math.abs(Math.sin(t * 0.8 + i)); circ(x, y, r() * 1.2 + 0.3, '#fff3dc'); }
@@ -27,7 +30,7 @@ function draw(dt) {
   // luna crescente
   const mx = W > H ? W * 0.84 : W * 0.16, my = W > H ? H * 0.14 : H * 0.07, mr = Math.min(W, H) * 0.05;
   glow(mx, my, mr * 6, 'rgba(255,230,180,0.5)', 0.6);
-  circ(mx, my, mr, '#fff0c8'); circ(mx + mr * 0.42, my - mr * 0.18, mr * 0.92, '#2a2244');
+  circ(mx, my, mr, '#fff0c8'); circ(mx + mr * 0.42, my - mr * 0.18, mr * 0.92, '#141436');
   // scala: la facciata occupa la parte bassa
   const land = W > H * 1.1;
   const s = land ? Math.min(W * 0.5 / 520, H * 0.82 / 470) : Math.min(W / 560, H * 0.5 / 470), cx = land ? W * 0.64 : W / 2, base = H;
@@ -83,10 +86,10 @@ function draw(dt) {
   // scritta sul vetro
   c.save(); c.fillStyle = 'rgba(255,246,226,.85)'; c.font = 'italic 600 22px Fraunces, Georgia, serif'; c.textAlign = 'center'; c.fillText('caffè · dolci · tè', vx + vw / 2, vy + 128); c.restore();
   c.strokeStyle = '#5a3424'; c.lineWidth = 6; c.beginPath(); c.moveTo(vx + vw / 2, vy); c.lineTo(vx + vw / 2, vy + 108); c.stroke();
-  glow(vx + vw / 2, vy + vh / 2, 260, 'rgba(255,190,110,.55)', 0.5);
+  glow(vx + vw / 2, vy + vh / 2, 300, 'rgba(255,170,90,.9)', 0.6); glow(vx + vw / 2, vy + vh / 2, 140, 'rgba(255,210,150,1)', 0.5);
   // porta
   const dx = 100;
-  rr(dx, -250, 120, 250, 8, '#2e4a3c'); rr(dx + 12, -236, 96, 120, 50, '#ffd28a'); glow(dx + 60, -180, 80, 'rgba(255,200,120,.6)', 0.35);
+  rr(dx, -250, 120, 250, 8, '#2e4a3c'); glow(dx + 60, -180, 120, 'rgba(255,190,110,1)', 0.45); rr(dx + 12, -236, 96, 120, 50, '#ffd28a'); glow(dx + 60, -180, 80, 'rgba(255,200,120,.6)', 0.35);
   c.fillStyle = '#2e4a3c'; c.fillRect(dx + 58, -236, 4, 120);
   circ(dx + 100, -110, 5, '#d8a84a');
   // cartello "aperto"
@@ -104,16 +107,34 @@ function draw(dt) {
   rr(232, -56, 36, 46, 6, '#b5623a'); circ(250, -72, 20, '#3e7a4a'); circ(240, -84, 12, '#4a8a4e');
   // gatto sul davanzale della vetrina
   const gx = vx + 60, gy = vy + vh + 2;
-  c.fillStyle = '#e8a060'; c.beginPath(); c.ellipse(gx, gy - 12, 20, 12, 0, 0, TAU); c.fill(); circ(gx + 16, gy - 24, 10, '#e8a060');
-  c.beginPath(); c.moveTo(gx + 9, gy - 30); c.lineTo(gx + 10, gy - 40); c.lineTo(gx + 16, gy - 32); c.fill(); c.beginPath(); c.moveTo(gx + 17, gy - 32); c.lineTo(gx + 23, gy - 40); c.lineTo(gx + 24, gy - 30); c.fill();
-  c.strokeStyle = '#e8a060'; c.lineWidth = 5; c.lineCap = 'round'; c.beginPath(); c.moveTo(gx - 18, gy - 8); c.quadraticCurveTo(gx - 36, gy - 4 + Math.sin(t * 2) * 6, gx - 30, gy + 10); c.stroke();
-  c.strokeStyle = '#4a2a1a'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(gx + 11, gy - 24); c.lineTo(gx + 15, gy - 23); c.moveTo(gx + 18, gy - 23); c.lineTo(gx + 22, gy - 24); c.stroke();
+  c.fillStyle = '#26222e'; c.beginPath(); c.ellipse(gx, gy - 12, 20, 12, 0, 0, TAU); c.fill(); circ(gx + 16, gy - 24, 10, '#26222e');
+  c.fillStyle = '#f4efe6'; c.beginPath(); c.ellipse(gx + 8, gy - 8, 9, 6, 0, 0, TAU); c.fill(); c.beginPath(); c.ellipse(gx + 17, gy - 20, 5, 4, 0, 0, TAU); c.fill();
+  c.fillStyle = '#26222e'; c.beginPath(); c.moveTo(gx + 9, gy - 30); c.lineTo(gx + 10, gy - 40); c.lineTo(gx + 16, gy - 32); c.fill(); c.beginPath(); c.moveTo(gx + 17, gy - 32); c.lineTo(gx + 23, gy - 40); c.lineTo(gx + 24, gy - 30); c.fill();
+  c.strokeStyle = '#26222e'; c.lineWidth = 5; c.lineCap = 'round'; c.beginPath(); c.moveTo(gx - 18, gy - 8); c.quadraticCurveTo(gx - 36, gy - 4 + Math.sin(t * 2) * 6, gx - 30, gy + 10); c.stroke();
+  c.strokeStyle = '#7a6a7a'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(gx + 11, gy - 25); c.lineTo(gx + 15, gy - 24); c.moveTo(gx + 18, gy - 24); c.lineTo(gx + 22, gy - 25); c.stroke();
+  // insegna verticale al neon accanto alla porta (salvata per dopo la luce)
+  neonAt = c.getTransform(); neonX = dx + 150;
   c.restore();
-  // foglie che cadono
-  for (const L of leaves) {
-    L.y += dt * 0.04 * L.v; L.x += dt * 0.015 * Math.sin(t + L.p); if (L.y > 1.05) { L.y = -0.05; L.x = Math.random(); }
-    c.save(); c.translate(L.x * W, L.y * H); c.rotate(t * L.v * 2 + L.p); c.fillStyle = L.col; c.beginPath(); c.ellipse(0, 0, 6 * L.s, 3 * L.s, 0, 0, TAU); c.fill(); c.restore();
+  // notte lofi: scurisce tutto, poi riaccende le luci calde
+  c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  c.save(); c.globalCompositeOperation = 'multiply'; c.fillStyle = '#4a4884'; c.fillRect(0, 0, W, H); c.restore();
+  c.save(); c.globalCompositeOperation = 'lighter';
+  for (const L of TL) { c.setTransform(L.m); glowNow(L.x, L.y, L.r, L.col, Math.min(1, L.a * 1.6)); }
+  c.restore(); c.setTransform(DPR, 0, 0, DPR, 0, 0);
+  // insegna al neon
+  if (neonAt) {
+    c.save(); c.setTransform(neonAt);
+    const nf = Math.sin(t * 13) > -0.95 ? 1 : 0.25;
+    c.fillStyle = '#1c1a2a'; c.beginPath(); c.roundRect(neonX - 22, -440, 44, 170, 8); c.fill();
+    c.font = '700 26px Fraunces, Georgia, serif'; c.textAlign = 'center'; c.shadowColor = '#ff6ab8'; c.shadowBlur = 18 * nf; c.fillStyle = nf > 0.5 ? '#ffe2f2' : '#6a3a5a';
+    'CAFFÈ'.split('').forEach((ch, i) => c.fillText(ch, neonX, -408 + i * 31));
+    c.restore();
+    c.save(); c.setTransform(neonAt); glowNow(neonX, -355, 160, 'rgba(255,90,168,1)', 0.35 * nf); c.restore();
   }
+  // pioggia
+  c.save(); c.strokeStyle = 'rgba(170,190,255,.35)'; c.lineWidth = 1;
+  for (let i = 0; i < 140; i++) { const x = ((i * 97.3) % W + t * 40) % W, y = ((i * 53.7) % H + t * (380 + (i % 5) * 40)) % H; c.beginPath(); c.moveTo(x, y); c.lineTo(x - 2, y + 12); c.stroke(); }
+  c.restore();
   // vignettatura calda
   const vg = c.createRadialGradient(W / 2, H * 0.55, Math.min(W, H) * 0.3, W / 2, H * 0.5, Math.max(W, H) * 0.8);
   vg.addColorStop(0, 'rgba(0,0,0,0)'); vg.addColorStop(1, 'rgba(20,10,20,.55)'); c.fillStyle = vg; c.fillRect(0, 0, W, H);

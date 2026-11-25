@@ -9,6 +9,7 @@ const BASE_RECIPE = { caffe: 'espresso', dolci: 'biscotti', te: 'te_nero', pasti
 const COST = { caffe: 1, dolci: 8, te: 60, pasticceria: 300 };
 
 let G = null;           // stato salvato
+const hooks = {};       // agganci verso la scena (posti a sedere)
 const L = {             // stato di sessione (non salvato)
   customers: [], nextId: 1, spawnT: 2, hintT: 25, events: [], time: 0,
 };
@@ -22,7 +23,7 @@ function fresh() {
     v: 1, money: 0, fama: 0, served: 0, lost: 0, earned: 0,
     rooms: { bancone: true }, sups: { latteria: true }, known: { espresso: true },
     menu, slots, st, decor: {}, reg, heard: [], tries: 0, cosm: {},
-    lastSave: Date.now(), play: 0, sound: true, tut: 0,
+    lastSave: Date.now(), play: 0, sound: true, tut: 0, waiters: 0, wlvl: 1,
   };
 }
 
@@ -77,8 +78,11 @@ function spawnCustomer(opts) {
   const cu = {
     id: L.nextId++, cat: c, rid, reg: opts.reg || null, state: 'enter', t: 0,
     patience: 28 + atmosphere() * 0.25 + (opts.reg ? 30 : 0), look: opts.reg ? DATA.REGULARS[opts.reg].look : randomLook(),
-    x: -20, tx: 0, seat: null, say: null, sayT: 0, full: queue.length >= 5,
+    x: -20, tx: 0, seat: null, say: null, sayT: 0, full: queue.length >= 5, mode: 'banco',
   };
+  // al tavolo se c'è un posto libero (e non sempre: c'è anche chi beve al volo)
+  const seat = hooks.seat ? hooks.seat(ROOM_OF[c], 'table') : null;
+  if (seat && (Math.random() < 0.62 || cu.full)) { cu.mode = 'tavolo'; cu.seat = seat; cu.full = false; cu.patience = 48 + atmosphere() * 0.3 + (opts.reg ? 30 : 0); }
   L.customers.push(cu);
   emit('spawn', cu);
   return cu;
@@ -108,6 +112,33 @@ function visitRegular(k) {
     if (s.v >= cap.v && reqOk) { s.cap++; emit('chapter', { k, i: s.cap - 1 }); if (s.cap === R.cap.length) giveCosmetic(k); }
   }
 }
+// consegna al tavolo: a mano (tocco) o da un cameriere che ha già prenotato il piatto
+const TABLE_BONUS = 1.25;
+function reserve(cu) {
+  if (cu.state !== 'wait' || cu.reserved) return false;
+  const st = G.st[cu.cat]; if (st.ready < 1) return false;
+  st.ready--; cu.reserved = true; return true;
+}
+function deliver(cu, reserved) {
+  if (cu.state !== 'wait') return 'no';
+  if (!reserved) { if (cu.reserved) return 'busy'; const st = G.st[cu.cat]; if (st.ready < 1) return 'empty'; st.ready--; }
+  const r = DATA.R[cu.rid], pay = r.p * priceMult() * TABLE_BONUS;
+  G.money += pay; G.earned += pay; G.served++;
+  const before = famaLevel();
+  G.fama += cu.reg ? 2 : 1;
+  cu.byWaiter = !!reserved; cu.state = 'eat'; cu.t = 0; cu.paid = pay; cu.stay = 9 + Math.random() * 10 + (cu.reg ? 10 : 0);
+  emit('deliver', cu);
+  if (famaLevel() > before) emit('fama', famaLevel());
+  if (cu.reg) visitRegular(cu.reg);
+  if (G.tut < 3) G.tut = 3;
+  return 'ok';
+}
+function waiterSpeed() { return 70 * (1 + 0.2 * (G.wlvl - 1)); }
+function waiterCost() { return Math.ceil(25 * Math.pow(1.8, G.waiters)); }
+function wlvlCost() { return Math.ceil(30 * Math.pow(1.5, G.wlvl - 1)); }
+function buyWaiter() { const x = waiterCost(); if (!spend(x)) return false; G.waiters++; emit('buy', 'waiter'); return true; }
+function buyWlvl() { const x = wlvlCost(); if (!spend(x)) return false; G.wlvl++; emit('buy', 'wlvl'); return true; }
+
 // ricordi cosmetici delle storie (solo estetica, nessun effetto di gioco)
 const COSM = { nadia: 'Vasetto di menta di Nadia', ottavio: 'Lettera di Ottavio', leo: 'Disegno di Leo', marta: 'Volantino degli Spifferi', grigio: 'Insegna del Bar Luna' };
 function giveCosmetic(k) { G.cosm[k] = true; emit('cosm', k); }
@@ -238,7 +269,7 @@ function tick(dt) {
   // pazienza
   for (const cu of L.customers) {
     cu.t += dt; if (cu.sayT > 0) { cu.sayT -= dt; if (cu.sayT <= 0) cu.say = null; }
-    if (cu.state === 'queue') { cu.patience -= dt; if (cu.patience <= 0) { cu.state = 'leave'; cu.t = 0; cu.sad = true; G.lost++; emit('lost', cu); } }
+    if (cu.state === 'queue' || (cu.state === 'wait' && !cu.reserved)) { cu.patience -= dt; if (cu.patience <= 0) { cu.state = 'leave'; cu.t = 0; cu.sad = true; G.lost++; emit('lost', cu); } }
   }
 }
 
@@ -277,7 +308,7 @@ return {
   get G() { return G; }, L, CATS, ROOM_OF, COSM, MAX_SLOTS,
   famaLevel, famaProgress, atmosphere, demand, priceMult, autoRate, bufCap, tapYield, speed,
   staffCost, lvlCost, slotCost, avgPrice, availIngs, availBases, knownCount, hintable, openCats,
-  experiment, offline, buyStaff, buyLvl, buySlot, buyRoom, buySup, buyDecor, toggleMenu, tap, tick, save, load, reset, fresh,
+  experiment, offline, reserve, deliver, waiterSpeed, waiterCost, wlvlCost, buyWaiter, buyWlvl, hooks, TABLE_BONUS, buyStaff, buyLvl, buySlot, buyRoom, buySup, buyDecor, toggleMenu, tap, tick, save, load, reset, fresh,
   setG(x) { G = x; },
 };
 })();

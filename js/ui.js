@@ -22,7 +22,11 @@ function boot() {
 function startGame(off) {
   TITLE.stop(); $('#title').classList.add('hidden'); $('#app').classList.remove('hidden');
   SCENE.init($('#scene')); layout(); SCENE.buildSeats();
-  SCENE.onHit = (h) => { if (h.kind === 'station') { if (GAME.tap(h.cat)) SCENE.onTap(h.cat); } else if (h.kind === 'locked') setTab('shop'); else if (h.kind === 'regular') setTab('diario'); };
+  SCENE.onHit = (h) => {
+    if (h.kind === 'station') { if (GAME.tap(h.cat)) SCENE.onTap(h.cat); }
+    else if (h.kind === 'table') { const r = GAME.deliver(h.cu); if (r === 'empty') SCENE.noReady(h.cu.cat); }
+    else if (h.kind === 'locked') setTab('shop'); else if (h.kind === 'regular') setTab('diario');
+  };
   document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => setTab(b.dataset.t));
   setTab('locale');
   if (off) toast('🌙', 'Bentornata!', 'Mentre eri via il caffè ha servito ' + fmt0.format(off.served) + ' clienti: +' + money(off.money));
@@ -47,6 +51,7 @@ function events() {
   const E = GAME.L.events; GAME.L.events = [];
   for (const e of E) {
     if (e.type === 'serve') SCENE.onServe(e.data);
+    else if (e.type === 'deliver') SCENE.onDeliver(e.data, !e.data.byWaiter);
     else if (e.type === 'fama') toast('⭐', 'Il caffè cresce', 'Ora siete «' + DATA.FAMA_NAMES[e.data] + '»');
     else if (e.type === 'arrive') toast('👋', 'Un nuovo cliente abituale', DATA.REGULARS[e.data].n + ' ha cominciato a passare di qui.');
     else if (e.type === 'chapter') { const R = DATA.REGULARS[e.data.k]; toast('📔', 'Nuova pagina nel Taccuino', R.n + ' — ' + R.cap[e.data.i].t); }
@@ -78,7 +83,13 @@ function locale(p) {
   const key = 'locale:' + cats.join(',');
   if (panelKey !== key) {
     panelKey = key;
-    p.innerHTML = '<div class="demand"><span id="dDem"></span><span id="dInc"></span></div>' + cats.map(c => {
+    p.innerHTML = '<div class="demand"><span id="dDem"></span><span id="dInc"></span></div>' + `<div class="card" id="sala">
+        <div class="st-head"><div class="st-ico">🍽️</div><div><h4>Servizio ai tavoli</h4><p data-f="info"></p></div></div>
+        <div class="chips" data-f="chips"></div>
+        <div class="row2">
+          <button class="buy" data-a="waiter"><b>Assumi cameriere</b><small>serve i tavoli da solo</small><span class="pr" data-f="wP"></span></button>
+          <button class="buy" data-a="wlvl"><b>Scarpe comode</b><small>camerieri più veloci</small><span class="pr" data-f="lP"></span></button>
+        </div></div>` + cats.map(c => {
       const C = DATA.CATS[c];
       return `<div class="card" data-c="${c}">
         <div class="st-head"><div class="st-ico">${C.icon}</div><div><h4>${C.st}</h4><p data-f="info"></p></div><button class="tapbtn" data-a="tap">Prepara</button></div>
@@ -88,6 +99,8 @@ function locale(p) {
           <button class="buy" data-a="lvl"><b>Migliora postazione</b><small data-f="lvlI"></small><span class="pr" data-f="lvlP"></span></button>
         </div></div>`;
     }).join('');
+    $('#sala [data-a=waiter]').onclick = () => GAME.buyWaiter();
+    $('#sala [data-a=wlvl]').onclick = () => GAME.buyWlvl();
     p.querySelectorAll('.card[data-c]').forEach(card => {
       const c = card.dataset.c;
       card.querySelector('[data-a=tap]').onclick = () => { if (GAME.tap(c)) SCENE.onTap(c); };
@@ -98,6 +111,14 @@ function locale(p) {
   const per = GAME.demand() * 60;
   $('#dDem').textContent = '👥 ~' + per.toFixed(0) + ' clienti al minuto';
   $('#dInc').textContent = '🍽️ ' + GAME.openCats().reduce((s, c) => s + G.menu[c].length, 0) + ' voci in menu';
+  {
+    const sala = $('#sala'), waiting = GAME.L.customers.filter(k => k.state === 'wait').length;
+    sala.querySelector('[data-f=info]').textContent = waiting ? waiting + ' ' + (waiting === 1 ? 'tavolo aspetta' : 'tavoli aspettano') + ' l\'ordinazione' : 'Tutti serviti, per ora';
+    sala.querySelector('[data-f=chips]').innerHTML = `<span class="chip">👆 tocca un cliente seduto per servirlo</span><span class="chip">💶 +25% al tavolo</span><span class="chip">🧑‍🍳 ${G.waiters} camerieri</span>`;
+    const wc = GAME.waiterCost(), lc = GAME.wlvlCost(), wb = sala.querySelector('[data-a=waiter]'), lb = sala.querySelector('[data-a=wlvl]');
+    sala.querySelector('[data-f=wP]').textContent = money(wc); sala.querySelector('[data-f=lP]').textContent = money(lc);
+    wb.disabled = G.money < wc; wb.classList.toggle('can', G.money >= wc); lb.disabled = G.money < lc || !G.waiters; lb.classList.toggle('can', G.money >= lc && G.waiters > 0);
+  }
   p.querySelectorAll('.card[data-c]').forEach(card => {
     const c = card.dataset.c, st = G.st[c];
     const q = GAME.L.customers.filter(k => k.cat === c && k.state === 'queue').length;
@@ -133,7 +154,7 @@ function demo() {
   G.slots = { caffe: 3, dolci: 2, te: 3, pasticceria: 2 };
   G.st.caffe = { lvl: 6, staff: 2, ready: 4, prog: 0.4 }; G.st.dolci = { lvl: 3, staff: 1, ready: 5, prog: 0.2 }; G.st.te = { lvl: 2, staff: 1, ready: 2, prog: 0.7 };
   G.decor = { monstera: true, lavagna: true, lucine: true, tende: true, giradischi: true, quadri: true, tappeto: true, libreria: true, pendolo: true, cuccia: true };
-  G.tut = 2; GAME.setG(G);
+  G.tut = 2; G.waiters = 1; GAME.setG(G);
   for (const k of ['nadia', 'ottavio', 'leo', 'marta']) { G.reg[k].here = true; G.reg[k].v = 5; G.reg[k].cap = 2; }
   // qualche cliente già in sala
   for (let i = 0; i < 9; i++) { GAME.tick(0.01); GAME.L.spawnT = 0; }
